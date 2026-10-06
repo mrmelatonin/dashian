@@ -389,29 +389,26 @@ export default function SituationDashboard() {
 
               {!isLoading && !weatherError && weather && (
                 <>
-                  <div className="current-weather">
-                    <div className="current-icon"><CurrentIcon size={29} strokeWidth={1.6} aria-hidden="true" /></div>
-                    <div className="current-reading">
-                      <span>{text.now}</span>
-                      <strong>{Math.round(weather.current.temperature_2m)}<sup>°</sup></strong>
-                    </div>
-                    <div className="current-condition">
-                      <strong>{currentCondition.label}</strong>
-                      <span><Wind size={13} aria-hidden="true" /> {Math.round(weather.current.wind_speed_10m)} {locale === 'uk' ? 'км/год' : 'km/h'}</span>
-                    </div>
-                  </div>
                   <div className="forecast-list">
                     {forecastDays.map((day, index) => {
-                      const DayIcon = day.Icon
+                      const DayIcon = index === 0 ? CurrentIcon : day.Icon
                       return (
-                        <div className="forecast-row" key={day.date}>
+                        <div className={`forecast-row${index === 0 ? ' is-today' : ''}`} key={day.date}>
                           <div className="forecast-day-group">
                             <span className="forecast-day">{index === 0 ? text.today : formatForecastDay(day.date, locale)}</span>
                             {index === 0 && <span className="forecast-date">{formatForecastDay(day.date, locale)}</span>}
+                            {index === 0 && (
+                              <div className="today-current">
+                                <strong>{Math.round(weather.current.temperature_2m)}°</strong>
+                                <span><Wind size={12} aria-hidden="true" /> {Math.round(weather.current.wind_speed_10m)} {locale === 'uk' ? 'км/год' : 'km/h'}</span>
+                              </div>
+                            )}
                             <span className="forecast-rain">{day.rain ?? 0}%</span>
                           </div>
-                          <DayIcon size={34} strokeWidth={1.7} className="forecast-icon" aria-hidden="true" />
-                          <span className="forecast-condition">{day.label}</span>
+                          <div className="forecast-condition-group">
+                            <DayIcon size={index === 0 ? 38 : 32} strokeWidth={1.7} className="forecast-icon" aria-hidden="true" />
+                            <span className="forecast-condition">{index === 0 ? currentCondition.label : day.label}</span>
+                          </div>
                           <span className="forecast-range"><b><small>{text.high}</small>{day.high}°</b><span><small>{text.low}</small>{day.low}°</span></span>
                         </div>
                       )
