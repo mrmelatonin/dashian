@@ -290,7 +290,8 @@
 .oblast-shape {
   fill: #cddbd0;
   stroke: #f8faf7;
-  stroke-width: 2.5;
+  stroke-width: 1.25;
+  vector-effect: non-scaling-stroke;
   stroke-linejoin: round;
   transition: fill 160ms ease, stroke 160ms ease;
 }
@@ -307,7 +308,7 @@
 .oblast-shape.is-selectable:hover,
 .oblast-shape.is-selectable:focus-visible {
   stroke: #203b30;
-  stroke-width: 5;
+  stroke-width: 2.5;
   outline: none;
 }
 
@@ -1102,6 +1103,8 @@
 .app-shell[data-theme='dark'] .oblast-shape {
   fill: #587362;
   stroke: #101612;
+  stroke-width: 1.25;
+  vector-effect: non-scaling-stroke;
 }
 
 .app-shell[data-theme='dark'] .oblast-shape.is-red {

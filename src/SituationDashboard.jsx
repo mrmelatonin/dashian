@@ -20,6 +20,8 @@ import { COPY, REGION_NAMES_UK } from './locales'
 import './SituationDashboard.css'
 
 const ALERT_REPORT_URL = 'https://api.alerts.in.ua/v3/alerts/active.md'
+const DISTRICT_MAP_URL = 'https://alerts.in.ua/assets/regions/v2/districts.svg?v=12'
+const FULL_MAP_URL = 'https://alerts.in.ua/assets/map.svg'
 const ALERT_RELAYS = [
   { name: 'Jina AI', url: `https://r.jina.ai/${ALERT_REPORT_URL}` },
   { name: 'AllOrigins', url: `https://api.allorigins.win/raw?url=${encodeURIComponent(ALERT_REPORT_URL)}` },
@@ -51,6 +53,35 @@ const REPORT_REGION_IDS = {
   'Zakarpatska oblast': 'zakarpattia',
   'Zaporizka oblast': 'zaporizhia',
   'Zhytomyrska oblast': 'zhytomyr',
+}
+
+const MAP_OBLAST_REGION_IDS = {
+  'Автономна Республіка Крим': 'crimea',
+  'Волинська область': 'volyn',
+  'Вінницька область': 'vinnytsia',
+  'Дніпропетровська область': 'dnipropetrovsk',
+  'Донецька область': 'donetsk',
+  'Житомирська область': 'zhytomyr',
+  'Закарпатська область': 'zakarpattia',
+  'Запорізька область': 'zaporizhia',
+  'Івано-Франківська область': 'ivano-frankivsk',
+  'Київ': 'kyiv-city',
+  'Київська область': 'kyiv',
+  'Кіровоградська область': 'kirovohrad',
+  'Луганська область': 'luhansk',
+  'Львівська область': 'lviv',
+  'Миколаївська область': 'mykolaiv',
+  'Одеська область': 'odessa',
+  'Полтавська область': 'poltava',
+  'Рівненська область': 'rivne',
+  'Сумська область': 'sumy',
+  'Тернопільська область': 'ternopil',
+  'Харківська область': 'kharkiv',
+  'Херсонська область': 'kherson',
+  'Хмельницька область': 'khmelnytskyi',
+  'Черкаська область': 'cherkasy',
+  'Чернівецька область': 'chernivtsi',
+  'Чернігівська область': 'chernihiv',
 }
 
 const REGIONS = [
@@ -114,6 +145,43 @@ function formatKyivTime(date, locale) {
   }).format(date)
 }
 
+function normalizeAreaName(name) {
+  return name
+    .normalize('NFC')
+    .trim()
+    .replace(/^м\.\s*/i, '')
+    .replace(/\s+район$/i, '')
+    .replace(/\s+/g, ' ')
+    .toLocaleLowerCase('uk-UA')
+}
+
+function areaEntriesFromText(areaText, level, regionId, areaStatuses) {
+  for (const match of areaText.matchAll(/([^,;:]+?)\s*\(([^()]+)\)/g)) {
+    const name = match[1].trim()
+    if (/^(red|yellow)$/i.test(name)) continue
+
+    const nameUk = match[2].trim()
+    const key = `${regionId}:${normalizeAreaName(nameUk)}`
+    const previous = areaStatuses[key]
+    if (!previous || level === 'red') {
+      areaStatuses[key] = { level, name, nameUk }
+    }
+  }
+}
+
+function mapRegionId(location) {
+  return MAP_OBLAST_REGION_IDS[location.oblast] ?? ''
+}
+
+function mapAreaStatus(location, report) {
+  const regionId = mapRegionId(location)
+  const areaStatus = report.areaStatuses[`${regionId}:${normalizeAreaName(location.name)}`]
+  if (areaStatus) return areaStatus
+
+  const oblastStatus = report.statuses[regionId]
+  return oblastStatus?.wholeOblast ? oblastStatus : null
+}
+
 function parseAlertReport(markdown) {
   const section = markdown.match(/## 3\. CURRENT WARNING STATUS\s*([\s\S]*?)(?=\n## 4\.)/)?.[1]
   const reportTime = markdown.match(/\b(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2})\b/)?.[1]
@@ -121,7 +189,9 @@ function parseAlertReport(markdown) {
   if (!section || !reportTime) throw new Error('The alert report format could not be read.')
 
   const statuses = {}
-  for (const block of section.split(/\n\s*\n/)) {
+  const areaStatuses = {}
+  for (const entry of section.split(/(?=^\*\*[^*]+\*\*)/m)) {
+    const block = entry.trim()
     const heading = block.match(/^\*\*([^*]+)\*\*/)?.[1]
     if (!heading || heading === 'Nominal alerts in occupied territory') continue
 
@@ -131,11 +201,25 @@ function parseAlertReport(markdown) {
     const levels = [...block.matchAll(/\b(red|yellow)\s*\((?:missile|drone)/gi)].map((match) => match[1].toLowerCase())
     const level = levels.includes('red') || levels.length === 0 ? 'red' : 'yellow'
     const areas = Number(block.match(/(\d+)\s+areas?\s+affected/i)?.[1] ?? 1)
-    statuses[regionId] = { level, areas }
+    const areaText = (block.match(/\d+\s+areas?\s+affected:\s*([\s\S]*?)(?=\s+The most recent\b|$)/i)?.[1] ?? '')
+      .replace(/\s*\[(?:red|yellow)\s*\([^\]]*\)\]\s*\.?\s*$/i, '')
+    const blockAreaStatuses = {}
+    const levelGroups = [...areaText.matchAll(/\b(red|yellow)\s*\([^)]*\)\s*:\s*([\s\S]*?)(?=;\s*(?:red|yellow)\s*\([^)]*\)\s*:|$)/gi)]
+    if (levelGroups.length) {
+      for (const group of levelGroups) {
+        areaEntriesFromText(group[2], group[1].toLowerCase(), regionId, blockAreaStatuses)
+      }
+    } else if (areaText) {
+      areaEntriesFromText(areaText, level, regionId, blockAreaStatuses)
+    }
+    Object.assign(areaStatuses, blockAreaStatuses)
+
+    statuses[regionId] = { level, areas, wholeOblast: Object.keys(blockAreaStatuses).length === 0 }
   }
 
   return {
     statuses,
+    areaStatuses,
     reportTime: new Date(reportTime),
     warningSummary: markdown.match(/WARNING STATE\s+([^\n]+)/)?.[1]?.trim() ?? '',
     summary: markdown.match(/WARNING STATE\s+ACTIVE\s+[—-]\s+(\d+)\s+areas?\s+in\s+(\d+)\s+oblasts?\s*\((\d+)\s+red,\s*(\d+)\s+yellow\)/i)?.slice(1).map(Number),
@@ -156,6 +240,7 @@ export default function SituationDashboard() {
   const [locale, setLocale] = useState(() => window.localStorage.getItem('fieldnote-locale') ?? 'en')
   const [forecast, setForecast] = useState({ regionId: '', data: null, error: '', updatedAt: null })
   const [alertFeed, setAlertFeed] = useState({ report: null, error: '', status: 'loading', isStale: false })
+  const [areaMap, setAreaMap] = useState(null)
   const [refreshKey, setRefreshKey] = useState(0)
   const region = REGIONS.find((item) => item.id === regionId) ?? REGIONS[0]
   const text = COPY[locale]
@@ -238,6 +323,53 @@ export default function SituationDashboard() {
   }, [refreshKey])
 
   useEffect(() => {
+    const controller = new AbortController()
+
+    Promise.all([DISTRICT_MAP_URL, FULL_MAP_URL].map((url) => fetch(url, { signal: controller.signal })))
+      .then((responses) => {
+        if (responses.some((response) => !response.ok)) throw new Error('Map service is unavailable.')
+        return Promise.all(responses.map((response) => response.text()))
+      })
+      .then(([districtText, fullMapText]) => {
+        const parser = new DOMParser()
+        const districts = parser.parseFromString(`<svg xmlns="http://www.w3.org/2000/svg">${districtText}</svg>`, 'image/svg+xml')
+        const fullMap = parser.parseFromString(fullMapText, 'image/svg+xml')
+        const viewBox = fullMap.documentElement.getAttribute('viewBox')
+        const raions = [...districts.querySelectorAll('g[data-uid]')].flatMap((group) => {
+          const areaName = group.getAttribute('data-raion')
+          const uid = group.getAttribute('data-uid')
+          return [...group.querySelectorAll('path')].map((path, index) => ({
+            id: `raion-${uid}-${index}`,
+            name: areaName,
+            oblast: path.getAttribute('data-oblast'),
+            path: path.getAttribute('d'),
+            type: 'raion',
+          }))
+        })
+        const kyivCity = [...fullMap.querySelectorAll('path[data-city="м. Київ"]')].map((path, index) => ({
+          id: `kyiv-city-${index}`,
+          name: 'м. Київ',
+          oblast: 'Київ',
+          path: path.getAttribute('d'),
+          type: 'city',
+        }))
+        const locations = [...raions, ...kyivCity]
+
+        if (!viewBox || raions.length === 0 || kyivCity.length === 0) {
+          throw new Error('The detailed map geometry could not be read.')
+        }
+        setAreaMap({ viewBox, locations })
+      })
+      .catch((error) => {
+        if (error.name !== 'AbortError') {
+          console.warn('Detailed map geometry is unavailable; using the oblast map.', error)
+        }
+      })
+
+    return () => controller.abort()
+  }, [])
+
+  useEffect(() => {
     const interval = window.setInterval(() => setRefreshKey((key) => key + 1), 60_000)
     return () => window.clearInterval(interval)
   }, [])
@@ -311,10 +443,32 @@ export default function SituationDashboard() {
             </div>
             <div className={`alert-map-wrap${isReportStale ? ' is-stale' : ''}`}>
               {alertFeed.report ? (
-                <svg className="alert-map" viewBox={ukraineMap.viewBox} role="img" aria-labelledby="ukraine-map-title ukraine-map-description">
+                <svg className="alert-map" viewBox={areaMap?.viewBox ?? ukraineMap.viewBox} role="img" aria-labelledby="ukraine-map-title ukraine-map-description">
                   <title id="ukraine-map-title">{text.mapAriaTitle}</title>
                   <desc id="ukraine-map-description">{text.mapAriaDescription}</desc>
-                  {ukraineMap.locations.map((location) => {
+                  {areaMap ? areaMap.locations.map((location) => {
+                    const parentRegionId = mapRegionId(location)
+                    const status = hasCurrentReport ? mapAreaStatus(location, alertFeed.report) : null
+                    const selectable = REGIONS.some((item) => item.id === parentRegionId)
+                    const locationName = (locale === 'uk' ? status?.nameUk : status?.name) ?? location.name
+                    const statusLabel = status
+                      ? status.level === 'green' ? text.clearLegend : status.level === 'red' ? text.redLegend : text.yellowLegend
+                      : text.clearLegend
+                    return (
+                      <path
+                        key={location.id}
+                        d={location.path}
+                        className={`oblast-shape${status && status.level !== 'green' ? ` is-${status.level}` : ''}${parentRegionId === regionId ? ' is-selected' : ''}${selectable ? ' is-selectable' : ''}`}
+                        role={selectable ? 'button' : 'img'}
+                        tabIndex={selectable ? 0 : -1}
+                        aria-label={`${locationName}: ${statusLabel}`}
+                        onClick={selectable ? () => setRegionId(parentRegionId) : undefined}
+                        onKeyDown={selectable ? (event) => { if (event.key === 'Enter' || event.key === ' ') setRegionId(parentRegionId) } : undefined}
+                      >
+                        <title>{locationName} · {statusLabel}</title>
+                      </path>
+                    )
+                  }) : ukraineMap.locations.map((location) => {
                     const status = hasCurrentReport ? activeStatuses[location.id] : null
                     const selectable = REGIONS.some((item) => item.id === location.id)
                     const locationName = locale === 'uk' ? REGION_NAMES_UK[location.id] ?? location.name : location.name
@@ -350,7 +504,7 @@ export default function SituationDashboard() {
                 <span><i className="legend-swatch is-yellow" /> {text.yellowLegend}</span>
                 <span><i className="legend-swatch is-clear" /> {text.clearLegend}</span>
               </div>
-              <a className="map-attribution" href="https://mapsvg.com/maps/ukraine" target="_blank" rel="noreferrer">{text.mapAttribution}</a>
+              <a className="map-attribution" href="https://alerts.in.ua/" target="_blank" rel="noreferrer">{text.mapAttribution}</a>
             </div>
           </section>
 
