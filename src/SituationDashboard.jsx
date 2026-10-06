@@ -174,7 +174,7 @@ export default function SituationDashboard() {
       current: 'temperature_2m,weather_code,wind_speed_10m',
       daily: 'weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max',
       timezone: 'Europe/Kyiv',
-      forecast_days: '3',
+      forecast_days: '4',
     })
 
     fetch(`https://api.open-meteo.com/v1/forecast?${query}`, { signal: controller.signal })
@@ -405,11 +405,12 @@ export default function SituationDashboard() {
                       const DayIcon = day.Icon
                       return (
                         <div className="forecast-row" key={day.date}>
-                          <div className="forecast-topline">
+                          <div className="forecast-day-group">
                             <span className="forecast-day">{index === 0 ? text.today : formatForecastDay(day.date, locale)}</span>
+                            {index === 0 && <span className="forecast-date">{formatForecastDay(day.date, locale)}</span>}
                             <span className="forecast-rain">{day.rain ?? 0}%</span>
                           </div>
-                          <DayIcon size={28} strokeWidth={1.7} className="forecast-icon" aria-hidden="true" />
+                          <DayIcon size={34} strokeWidth={1.7} className="forecast-icon" aria-hidden="true" />
                           <span className="forecast-condition">{day.label}</span>
                           <span className="forecast-range"><b><small>{text.high}</small>{day.high}°</b><span><small>{text.low}</small>{day.low}°</span></span>
                         </div>
