@@ -7,16 +7,19 @@ import {
   CloudRain,
   CloudSnow,
   CloudSun,
+  Droplets,
   ExternalLink,
   MapPin,
   Moon,
   RefreshCw,
   ShieldAlert,
   Sun,
+  Thermometer,
   Wind,
 } from 'lucide-react'
 import ukraineMap from '@svg-maps/ukraine'
 import { COPY, REGION_NAMES_UK } from './locales'
+import PowerTimeline from './PowerTimeline'
 import './SituationDashboard.css'
 
 const ALERT_REPORT_URL = 'https://api.alerts.in.ua/v3/alerts/active.md'
@@ -242,6 +245,7 @@ export default function SituationDashboard() {
   const [alertFeed, setAlertFeed] = useState({ report: null, error: '', status: 'loading', isStale: false })
   const [areaMap, setAreaMap] = useState(null)
   const [refreshKey, setRefreshKey] = useState(0)
+  const [powerSource, setPowerSource] = useState('')
   const region = REGIONS.find((item) => item.id === regionId) ?? REGIONS[0]
   const text = COPY[locale]
   const regionName = locale === 'uk' ? REGION_NAMES_UK[region.id] : region.name
@@ -257,9 +261,9 @@ export default function SituationDashboard() {
       latitude: String(selectedRegion.latitude),
       longitude: String(selectedRegion.longitude),
       current: 'temperature_2m,weather_code,wind_speed_10m',
-      daily: 'weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max',
+      daily: 'weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_speed_10m_max',
       timezone: 'Europe/Kyiv',
-      forecast_days: '4',
+      forecast_days: '2',
     })
 
     fetch(`https://api.open-meteo.com/v1/forecast?${query}`, { signal: controller.signal })
@@ -381,6 +385,7 @@ export default function SituationDashboard() {
     high: Math.round(weather.daily.temperature_2m_max[index]),
     low: Math.round(weather.daily.temperature_2m_min[index]),
     rain: weather.daily.precipitation_probability_max[index],
+    wind: Math.round(weather.daily.wind_speed_10m_max[index]),
     ...weatherForCode(weather.daily.weather_code[index], locale),
   })) ?? []
   const activeStatuses = alertFeed.report?.statuses ?? {}
@@ -415,171 +420,146 @@ export default function SituationDashboard() {
           <span className="brand-mark"><span /></span>
           <span className="brand-name">FIELDNOTE<span>/UA</span></span>
         </a>
-        <div className="topbar-center"><span className="topbar-dot" /> {text.topbarCenter}</div>
         <div className="topbar-actions">
-          <button className="locale-toggle" type="button" onClick={() => setLocale((current) => current === 'en' ? 'uk' : 'en')} aria-label={text.switchLanguage} title={text.switchLanguage}>
+          <button className="topbar-button" type="button" onClick={() => setRefreshKey((key) => key + 1)} aria-label={text.refreshAll} title={text.refreshAll}>
+            <RefreshCw size={20} aria-hidden="true" />
+          </button>
+          <button className="topbar-button locale-toggle" type="button" onClick={() => setLocale((current) => current === 'en' ? 'uk' : 'en')} aria-label={text.switchLanguage} title={text.switchLanguage}>
             {text.language}
           </button>
-          <button className="theme-toggle" type="button" onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')} aria-label={theme === 'dark' ? text.switchToLight : text.switchToDark} title={theme === 'dark' ? text.switchToLight : text.switchToDark}>
-            {theme === 'dark' ? <Sun size={17} aria-hidden="true" /> : <Moon size={17} aria-hidden="true" />}
+          <button className="topbar-button" type="button" onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')} aria-label={theme === 'dark' ? text.switchToLight : text.switchToDark} title={theme === 'dark' ? text.switchToLight : text.switchToDark}>
+            {theme === 'dark' ? <Sun size={20} aria-hidden="true" /> : <Moon size={20} aria-hidden="true" />}
           </button>
-          <a className="source-link" href="https://alerts.in.ua/" target="_blank" rel="noreferrer">
-            {text.officialAlertMap} <ExternalLink size={14} aria-hidden="true" />
-          </a>
         </div>
       </header>
 
       <main id="overview" className="dashboard">
-        <div className="dashboard-grid">
-          <section className="map-panel" aria-labelledby="map-title">
-            <div className="panel-heading map-heading">
-              <div>
-                <p className="eyebrow">{text.nationalView} <span className="section-index">01</span></p>
-                <h2 id="map-title">{text.mapTitle}</h2>
-              </div>
-              <button className="icon-link" type="button" onClick={() => setRefreshKey((key) => key + 1)} aria-label={text.refreshAll} title={text.refreshAll}>
-                <RefreshCw size={16} aria-hidden="true" />
-              </button>
+        <section className="panel map-panel" aria-label={text.mapTitle}>
+          <div className={`alert-map-wrap${isReportStale ? ' is-stale' : ''}`}>
+          {alertFeed.report ? (
+            <svg className="alert-map" viewBox={areaMap?.viewBox ?? ukraineMap.viewBox} role="img" aria-labelledby="ukraine-map-title ukraine-map-description">
+              <title id="ukraine-map-title">{text.mapAriaTitle}</title>
+              <desc id="ukraine-map-description">{text.mapAriaDescription}</desc>
+              {areaMap ? areaMap.locations.map((location) => {
+                const parentRegionId = mapRegionId(location)
+                const status = hasCurrentReport ? mapAreaStatus(location, alertFeed.report) : null
+                const selectable = REGIONS.some((item) => item.id === parentRegionId)
+                const locationName = (locale === 'uk' ? status?.nameUk : status?.name) ?? location.name
+                const statusLabel = status
+                  ? status.level === 'green' ? text.clearLegend : status.level === 'red' ? text.redLegend : text.yellowLegend
+                  : text.clearLegend
+                return (
+                  <path
+                    key={location.id}
+                    d={location.path}
+                    className={`oblast-shape${status && status.level !== 'green' ? ` is-${status.level}` : ''}${parentRegionId === regionId ? ' is-selected' : ''}${selectable ? ' is-selectable' : ''}`}
+                    role={selectable ? 'button' : 'img'}
+                    tabIndex={selectable ? 0 : -1}
+                    aria-label={`${locationName}: ${statusLabel}`}
+                    onClick={selectable ? () => setRegionId(parentRegionId) : undefined}
+                    onKeyDown={selectable ? (event) => { if (event.key === 'Enter' || event.key === ' ') setRegionId(parentRegionId) } : undefined}
+                  >
+                    <title>{locationName} · {statusLabel}</title>
+                  </path>
+                )
+              }) : ukraineMap.locations.map((location) => {
+                const status = hasCurrentReport ? activeStatuses[location.id] : null
+                const selectable = REGIONS.some((item) => item.id === location.id)
+                const locationName = locale === 'uk' ? REGION_NAMES_UK[location.id] ?? location.name : location.name
+                const statusLabel = status
+                  ? `${status.level === 'red' ? text.redLegend : text.yellowLegend} · ${formatAreaCount(status.areas, locale)}`
+                  : text.clearLegend
+                return (
+                  <path
+                    key={location.id}
+                    d={location.path}
+                    className={`oblast-shape${status ? ` is-${status.level}` : ''}${location.id === regionId ? ' is-selected' : ''}${selectable ? ' is-selectable' : ''}`}
+                    role={selectable ? 'button' : 'img'}
+                    tabIndex={selectable ? 0 : -1}
+                    aria-label={`${locationName}: ${statusLabel}`}
+                    onClick={selectable ? () => setRegionId(location.id) : undefined}
+                    onKeyDown={selectable ? (event) => { if (event.key === 'Enter' || event.key === ' ') setRegionId(location.id) } : undefined}
+                  >
+                    <title>{locationName} · {statusLabel}</title>
+                  </path>
+                )
+              })}
+            </svg>
+          ) : (
+            <div className="map-message" role="status">
+              {alertFeed.status === 'loading' ? <><RefreshCw size={19} className="spin" aria-hidden="true" /> {text.loadingAlerts}</> : <>{text.alertUnavailable} <a href="https://alerts.in.ua/" target="_blank" rel="noreferrer">{text.openMap} <ExternalLink size={13} aria-hidden="true" /></a></>}
             </div>
-            <div className={`alert-map-wrap${isReportStale ? ' is-stale' : ''}`}>
-              {alertFeed.report ? (
-                <svg className="alert-map" viewBox={areaMap?.viewBox ?? ukraineMap.viewBox} role="img" aria-labelledby="ukraine-map-title ukraine-map-description">
-                  <title id="ukraine-map-title">{text.mapAriaTitle}</title>
-                  <desc id="ukraine-map-description">{text.mapAriaDescription}</desc>
-                  {areaMap ? areaMap.locations.map((location) => {
-                    const parentRegionId = mapRegionId(location)
-                    const status = hasCurrentReport ? mapAreaStatus(location, alertFeed.report) : null
-                    const selectable = REGIONS.some((item) => item.id === parentRegionId)
-                    const locationName = (locale === 'uk' ? status?.nameUk : status?.name) ?? location.name
-                    const statusLabel = status
-                      ? status.level === 'green' ? text.clearLegend : status.level === 'red' ? text.redLegend : text.yellowLegend
-                      : text.clearLegend
-                    return (
-                      <path
-                        key={location.id}
-                        d={location.path}
-                        className={`oblast-shape${status && status.level !== 'green' ? ` is-${status.level}` : ''}${parentRegionId === regionId ? ' is-selected' : ''}${selectable ? ' is-selectable' : ''}`}
-                        role={selectable ? 'button' : 'img'}
-                        tabIndex={selectable ? 0 : -1}
-                        aria-label={`${locationName}: ${statusLabel}`}
-                        onClick={selectable ? () => setRegionId(parentRegionId) : undefined}
-                        onKeyDown={selectable ? (event) => { if (event.key === 'Enter' || event.key === ' ') setRegionId(parentRegionId) } : undefined}
-                      >
-                        <title>{locationName} · {statusLabel}</title>
-                      </path>
-                    )
-                  }) : ukraineMap.locations.map((location) => {
-                    const status = hasCurrentReport ? activeStatuses[location.id] : null
-                    const selectable = REGIONS.some((item) => item.id === location.id)
-                    const locationName = locale === 'uk' ? REGION_NAMES_UK[location.id] ?? location.name : location.name
-                    const statusLabel = status
-                      ? `${status.level === 'red' ? text.redLegend : text.yellowLegend} · ${formatAreaCount(status.areas, locale)}`
-                      : text.clearLegend
-                    return (
-                      <path
-                        key={location.id}
-                        d={location.path}
-                        className={`oblast-shape${status ? ` is-${status.level}` : ''}${location.id === regionId ? ' is-selected' : ''}${selectable ? ' is-selectable' : ''}`}
-                        role={selectable ? 'button' : 'img'}
-                        tabIndex={selectable ? 0 : -1}
-                        aria-label={`${locationName}: ${statusLabel}`}
-                        onClick={selectable ? () => setRegionId(location.id) : undefined}
-                        onKeyDown={selectable ? (event) => { if (event.key === 'Enter' || event.key === ' ') setRegionId(location.id) } : undefined}
-                      >
-                        <title>{locationName} · {statusLabel}</title>
-                      </path>
-                    )
-                  })}
-                </svg>
-              ) : (
-                <div className="map-message" role="status">
-                  {alertFeed.status === 'loading' ? <><RefreshCw size={19} className="spin" aria-hidden="true" /> {text.loadingAlerts}</> : <>{text.alertUnavailable} <a href="https://alerts.in.ua/" target="_blank" rel="noreferrer">{text.openMap} <ExternalLink size={13} aria-hidden="true" /></a></>}
-                </div>
-              )}
-              {alertFeed.report?.warningSummary && <div className="map-summary">{locale === 'uk' && alertFeed.report.summary ? `${formatAreaCount(alertFeed.report.summary[0], locale)} у ${alertFeed.report.summary[1]} областях · ${alertFeed.report.summary[2]} ${text.redCount} / ${alertFeed.report.summary[3]} ${text.yellowCount}` : alertFeed.report.warningSummary}</div>}
+          )}
+          </div>
+        </section>
+
+        <PowerTimeline text={text} refreshKey={refreshKey} onSource={setPowerSource} />
+
+        <aside className="panel side-panel" aria-labelledby="region-title">
+          <h2 id="region-title" className="region-title"><MapPin aria-hidden="true" /> {regionName}</h2>
+
+          <div className={`alarm-status is-${statusTone}`} role="status" aria-live="polite" aria-atomic="true">
+            <ShieldAlert className="status-icon" strokeWidth={1.8} aria-hidden="true" />
+            <div className="status-copy">
+              <strong>{statusLabel}</strong>
+              <span className="status-detail">{statusDetail}</span>
             </div>
-            <div className="map-caption">
-              <div className="map-legend" aria-label="Alert map legend">
-                <span><i className="legend-swatch is-red" /> {text.redLegend}</span>
-                <span><i className="legend-swatch is-yellow" /> {text.yellowLegend}</span>
-                <span><i className="legend-swatch is-clear" /> {text.clearLegend}</span>
-              </div>
-              <a className="map-attribution" href="https://alerts.in.ua/" target="_blank" rel="noreferrer">{text.mapAttribution}</a>
+          </div>
+          {alertFeed.error && alertFeed.report && <p className="feed-warning" role="status">{text.relayWarning}</p>}
+
+          {isLoading && <div className="weather-message"><RefreshCw size={20} className="spin" aria-hidden="true" /> {text.loadingForecast}</div>}
+          {!isLoading && weatherError && <div className="weather-message weather-error" role="status">{text.forecastUnavailable}</div>}
+          {!isLoading && !weatherError && weather && (
+            <div className="day-cards" aria-label={text.weather}>
+              {forecastDays.slice(0, 2).map((day, index) => {
+                const isToday = index === 0
+                const DayIcon = isToday ? CurrentIcon : day.Icon
+                const conditionKey = isToday ? currentCondition.key : day.key
+                const condition = isToday ? currentCondition.label : day.label
+                const mainTemp = isToday ? Math.round(weather.current.temperature_2m) : day.high
+                const wind = isToday ? Math.round(weather.current.wind_speed_10m) : day.wind
+                return (
+                  <article className={`day-card${isToday ? ' is-today' : ''}`} key={day.date}>
+                    <header className="day-card-head">
+                      <span className="day-card-name">{isToday ? text.today : text.tomorrow}</span>
+                      <span className="day-card-date">{formatForecastDay(day.date, locale)}</span>
+                    </header>
+                    <div className="day-card-main">
+                      <DayIcon strokeWidth={1.6} className={`day-card-icon wx-${conditionKey}`} aria-hidden="true" />
+                      <strong className="day-card-temp">{mainTemp}°</strong>
+                      <span className="day-card-condition">{condition}</span>
+                    </div>
+                    <dl className="day-card-stats">
+                      <div title={`${text.high} / ${text.low}`}>
+                        <dt><span className="sr-only">{text.high} / {text.low}</span><Thermometer aria-hidden="true" /></dt>
+                        <dd>{day.high}°<span className="range-sep">/</span>{day.low}°</dd>
+                      </div>
+                      <div title={text.rain}>
+                        <dt><span className="sr-only">{text.rain}</span><Droplets aria-hidden="true" /></dt>
+                        <dd>{day.rain ?? 0}%</dd>
+                      </div>
+                      <div title={text.wind}>
+                        <dt><span className="sr-only">{text.wind}</span><Wind aria-hidden="true" /></dt>
+                        <dd>{wind} <span className="unit">{text.windUnit}</span></dd>
+                      </div>
+                    </dl>
+                  </article>
+                )
+              })}
             </div>
-          </section>
-
-          <aside className="side-column">
-            <section className="region-panel" aria-labelledby="region-title">
-              <div className="panel-heading region-heading">
-                <div>
-                  <p className="eyebrow">{text.localConditions} <span className="section-index">02</span></p>
-                  <h2 id="region-title">{regionName}</h2>
-                </div>
-                <MapPin size={18} strokeWidth={1.8} aria-hidden="true" />
-              </div>
-
-              <div className={`alarm-status is-${statusTone}`} role="status" aria-live="polite" aria-atomic="true">
-                <div className="status-icon"><ShieldAlert size={27} strokeWidth={1.8} aria-hidden="true" /></div>
-                <div className="status-copy">
-                  <strong>{statusLabel}</strong>
-                  <span className="status-detail">{statusDetail}</span>
-                </div>
-              </div>
-              <p className="source-caveat">{text.reportSource}: <a href={ALERT_REPORT_URL} target="_blank" rel="noreferrer">alerts.in.ua</a> · {alertFeed.report?.relay ?? 'relay'}</p>
-              {alertFeed.error && alertFeed.report && <p className="feed-warning" role="status">{text.relayWarning}</p>}
-            </section>
-
-            <section className="weather-panel" aria-labelledby="weather-title">
-              <div className="panel-heading weather-heading">
-                <div>
-                  <p className="eyebrow">{text.threeDayOutlook} <span className="section-index">03</span></p>
-                  <h2 id="weather-title">{text.weather} <span>· {regionName}</span></h2>
-                </div>
-                <Wind size={18} strokeWidth={1.8} aria-hidden="true" />
-              </div>
-
-              {isLoading && <div className="weather-message"><RefreshCw size={16} className="spin" aria-hidden="true" /> {text.loadingForecast}</div>}
-              {!isLoading && weatherError && <div className="weather-message weather-error" role="status">{text.forecastUnavailable}</div>}
-
-              {!isLoading && !weatherError && weather && (
-                <>
-                  <div className="forecast-list">
-                    {forecastDays.map((day, index) => {
-                      const DayIcon = index === 0 ? CurrentIcon : day.Icon
-                      return (
-                        <div className={`forecast-row${index === 0 ? ' is-today' : ''}`} key={day.date}>
-                          <div className="forecast-day-group">
-                            <span className="forecast-day">{index === 0 ? text.today : formatForecastDay(day.date, locale)}</span>
-                            {index === 0 && <span className="forecast-date">{formatForecastDay(day.date, locale)}</span>}
-                            {index === 0 && (
-                              <div className="today-current">
-                                <strong>{Math.round(weather.current.temperature_2m)}°</strong>
-                                <span><Wind size={12} aria-hidden="true" /> {Math.round(weather.current.wind_speed_10m)} {locale === 'uk' ? 'км/год' : 'km/h'}</span>
-                              </div>
-                            )}
-                            <span className="forecast-rain">{day.rain ?? 0}%</span>
-                          </div>
-                          <div className="forecast-condition-group">
-                            <DayIcon size={index === 0 ? 38 : 32} strokeWidth={1.7} className="forecast-icon" aria-hidden="true" />
-                            <span className="forecast-condition">{index === 0 ? currentCondition.label : day.label}</span>
-                          </div>
-                          <span className="forecast-range"><b><small>{text.high}</small>{day.high}°</b><span><small>{text.low}</small>{day.low}°</span></span>
-                        </div>
-                      )
-                    })}
-                  </div>
-                  <div className="weather-footnote">
-                    <span>{text.precipitationChance}</span>
-                    <span className="updated-at">{updatedAt ? `${text.forecastUpdated} ${formatKyivTime(updatedAt, locale)} ${text.kyiv}` : '—'}</span>
-                  </div>
-                </>
-              )}
-              <div className="weather-source">{locale === 'uk' ? 'Прогноз:' : 'Forecast by'} <a href="https://open-meteo.com/" target="_blank" rel="noreferrer">Open-Meteo <ExternalLink size={11} aria-hidden="true" /></a><a href="https://alerts.in.ua/" target="_blank" rel="noreferrer">{text.officialAlertMap} <ExternalLink size={11} aria-hidden="true" /></a></div>
-            </section>
-          </aside>
-        </div>
-
+          )}
+        </aside>
       </main>
+
+      <footer className="fine-print">
+        <span>
+          {text.reportSource}: <a href="https://alerts.in.ua/" target="_blank" rel="noreferrer">alerts.in.ua</a> {text.via} {alertFeed.report?.relay ?? 'relay'}
+          {' · '}{text.mapAttribution}
+          {' · '}{text.forecastBy} <a href="https://open-meteo.com/" target="_blank" rel="noreferrer">Open-Meteo</a>
+          {powerSource && <>{' · '}{text.powerTitle}: {powerSource}</>}
+        </span>
+        <span>{updatedAt ? `${text.forecastUpdated} ${formatKyivTime(updatedAt, locale)} ${text.kyiv}` : ''}</span>
+      </footer>
     </div>
   )
 }
