@@ -415,24 +415,6 @@ export default function SituationDashboard() {
 
   return (
     <div className="app-shell" data-theme={theme}>
-      <header className="topbar">
-        <a className="brand" href="#overview" aria-label={text.fieldnoteHome}>
-          <span className="brand-mark"><span /></span>
-          <span className="brand-name">FIELDNOTE<span>/UA</span></span>
-        </a>
-        <div className="topbar-actions">
-          <button className="topbar-button" type="button" onClick={() => setRefreshKey((key) => key + 1)} aria-label={text.refreshAll} title={text.refreshAll}>
-            <RefreshCw size={20} aria-hidden="true" />
-          </button>
-          <button className="topbar-button locale-toggle" type="button" onClick={() => setLocale((current) => current === 'en' ? 'uk' : 'en')} aria-label={text.switchLanguage} title={text.switchLanguage}>
-            {text.language}
-          </button>
-          <button className="topbar-button" type="button" onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')} aria-label={theme === 'dark' ? text.switchToLight : text.switchToDark} title={theme === 'dark' ? text.switchToLight : text.switchToDark}>
-            {theme === 'dark' ? <Sun size={20} aria-hidden="true" /> : <Moon size={20} aria-hidden="true" />}
-          </button>
-        </div>
-      </header>
-
       <main id="overview" className="dashboard">
         <section className="panel map-panel" aria-label={text.mapTitle}>
           <div className={`alert-map-wrap${isReportStale ? ' is-stale' : ''}`}>
@@ -496,7 +478,20 @@ export default function SituationDashboard() {
         <PowerTimeline text={text} refreshKey={refreshKey} onSource={setPowerSource} />
 
         <aside className="panel side-panel" aria-labelledby="region-title">
-          <h2 id="region-title" className="region-title"><MapPin aria-hidden="true" /> {regionName}</h2>
+          <div className="side-header">
+            <h2 id="region-title" className="region-title"><MapPin aria-hidden="true" /> {regionName}</h2>
+            <div className="controls">
+              <button className="control-button" type="button" onClick={() => setRefreshKey((key) => key + 1)} aria-label={text.refreshAll} title={text.refreshAll}>
+                <RefreshCw aria-hidden="true" />
+              </button>
+              <button className="control-button locale-toggle" type="button" onClick={() => setLocale((current) => current === 'en' ? 'uk' : 'en')} aria-label={text.switchLanguage} title={text.switchLanguage}>
+                {text.language}
+              </button>
+              <button className="control-button" type="button" onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')} aria-label={theme === 'dark' ? text.switchToLight : text.switchToDark} title={theme === 'dark' ? text.switchToLight : text.switchToDark}>
+                {theme === 'dark' ? <Sun aria-hidden="true" /> : <Moon aria-hidden="true" />}
+              </button>
+            </div>
+          </div>
 
           <div className={`alarm-status is-${statusTone}`} role="status" aria-live="polite" aria-atomic="true">
             <ShieldAlert className="status-icon" strokeWidth={1.8} aria-hidden="true" />
